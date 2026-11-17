@@ -460,6 +460,11 @@ export default class BrowserFunc {
                         'BOOTSTRAP',
                         `在 ${filename} 中发现 ${names.length} 个 action id: [${names.join(', ')}]`
                     )
+                    this.bot.logger.debug(
+                        this.bot.isMobile,
+                        'BOOTSTRAP',
+                        `[诊断] ${filename} 名字→编号: ${names.map(n => `${n}=${ids.byName[n]}`).join(' | ')}`
+                    )
                 } else {
                     this.bot.logger.debug(this.bot.isMobile, 'BOOTSTRAP', `在 ${filename} 中未发现 server-action id`)
                 }
@@ -479,6 +484,11 @@ export default class BrowserFunc {
                 this.bot.isMobile,
                 'BOOTSTRAP',
                 `已发现 ${Object.keys(result).length} 个 action id: [${Object.keys(result).join(', ')}]`
+            )
+            this.bot.logger.debug(
+                this.bot.isMobile,
+                'BOOTSTRAP',
+                `[诊断] 最终 reportActivity=${result.reportActivity ?? '未找到'}`
             )
         } catch (error) {
             this.bot.logger.error(
@@ -911,7 +921,7 @@ export default class BrowserFunc {
         actionId: string,
         body: unknown[],
         opts?: { url?: string; referer?: string; routerStateTree?: string }
-    ): Promise<{ status: number; acknowledged: boolean; availablePoints: number | null }> {
+    ): Promise<{ status: number; acknowledged: boolean; availablePoints: number | null; bodyExcerpt: string }> {
         const url = opts?.url ?? URLs.rewards.earn
         const referer = opts?.referer ?? url
         const routerStateTree = opts?.routerStateTree ?? this.bot.nextRouterStateTree
@@ -931,6 +941,12 @@ export default class BrowserFunc {
             ...(this.rewardsDeploymentId ? { 'X-Deployment-Id': this.rewardsDeploymentId } : {})
         }
 
+        this.bot.logger.debug(
+            this.bot.isMobile,
+            'SERVER-ACTION',
+            `[诊断] 请求头 | url=${url} | Next-Action=${actionId} | X-Deployment-Id=${this.rewardsDeploymentId || '无'} | Next-Router-State-Tree=${routerStateTree}`
+        )
+
         const response = await this.bot.http.request({
             url,
             method: 'POST',
@@ -945,7 +961,10 @@ export default class BrowserFunc {
         return {
             status: response.status,
             acknowledged: this.bot.utils.serverActionAcknowledged(response.data),
-            availablePoints: this.bot.browser.react.availablePointsFromPayload(response.data)
+            availablePoints: this.bot.browser.react.availablePointsFromPayload(response.data),
+            bodyExcerpt: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? ''))
+                .slice(0, 200)
+                .replace(/\r?\n/g, '\\n')
         }
     }
 

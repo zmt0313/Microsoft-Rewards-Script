@@ -58,31 +58,43 @@ export class UrlReward extends BaseActivity {
             `开始处理 UrlReward | offerId=${offerId} | geo=${this.bot.userData.geoLocale} | currentBalance=${oldBalance}`
         )
 
+        this.bot.logger.debug(
+            this.bot.isMobile,
+            'URL-REWARD',
+            `[诊断] 上报参数 | offerId=${offerId} | Next-Action=${actionId} | hash=${live.hash?.slice(0, 12) ?? 'null'}… | activityType=${activityType} | isPromotional=${live.isPromotional} | timezoneOffset=${this.bot.userData.timezoneOffset}`
+        )
+
         try {
             this.markExecuted()
-            const { status, acknowledged, availablePoints } = await this.bot.browser.func.reportServerAction(
-                actionId,
-                [
-                    live.hash,
-                    activityType,
+            const { status, acknowledged, availablePoints, bodyExcerpt } =
+                await this.bot.browser.func.reportServerAction(
+                    actionId,
+                    [
+                        live.hash,
+                        activityType,
+                        {
+                            offerid: offerId,
+                            isPromotional: live.isPromotional ? true : '$undefined',
+                            timezoneOffset: this.bot.userData.timezoneOffset
+                        }
+                    ],
                     {
-                        offerid: offerId,
-                        isPromotional: live.isPromotional ? true : '$undefined',
-                        timezoneOffset: this.bot.userData.timezoneOffset
+                        url: URLs.rewards.dashboard,
+                        referer: URLs.rewards.dashboard,
+                        routerStateTree: this.bot.browser.react.routerStateTree('dashboard')
                     }
-                ],
-                {
-                    url: URLs.rewards.dashboard,
-                    referer: URLs.rewards.dashboard,
-                    routerStateTree: this.bot.browser.react.routerStateTree('dashboard')
-                }
-            )
+                )
 
             if (!acknowledged) {
                 this.bot.logger.warn(
                     this.bot.isMobile,
                     'URL-REWARD',
                     `UrlReward 请求未被确认 | offerId=${offerId} | status=${status}`
+                )
+                this.bot.logger.debug(
+                    this.bot.isMobile,
+                    'URL-REWARD',
+                    `[诊断] 未确认响应原文（前 200 字符） | offerId=${offerId} | body=${bodyExcerpt}`
                 )
             }
 

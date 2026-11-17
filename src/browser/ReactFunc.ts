@@ -608,6 +608,13 @@ export default class ReactFunc {
                     if (candidates.length) {
                         byName[candidates[candidates.length - 1]!] = id
                     }
+                    if (candidates.length > 1 || candidates.includes('reportActivity')) {
+                        this.bot.logger.debug(
+                            this.bot.isMobile,
+                            'REACT-PARSE',
+                            `[诊断] action 候选名 | id=${id} | 候选=[${candidates.join(', ')}] | 采用=${candidates.at(-1)}`
+                        )
+                    }
                 }
             }
 
