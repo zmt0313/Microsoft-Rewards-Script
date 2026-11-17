@@ -50,7 +50,9 @@ export const URLs = {
     },
     bing: {
         origin: BING,
+        rewardsFlyoutPage: `${BING}/rewards/panelflyout?channel=bingflyout&partnerId=BingRewards&isDarkMode=0&ru=${encodeURIComponent(`${BING}/`)}`,
         rewardsFlyoutUserInfo: `${BING}/rewards/panelflyout/getuserinfo?channel=BingFlyout&partnerId=BingRewards`,
+        rewardsFlyoutReportActivity: `${BING}/msrewards/api/v1/reportactivity`,
         search: (query: string, cvid: string) =>
             `${BING}/search?q=${encodeURIComponent(query)}&PC=U531&FORM=ANNTA1&cvid=${cvid}`
     },

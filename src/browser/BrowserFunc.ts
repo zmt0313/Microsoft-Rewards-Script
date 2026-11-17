@@ -3,7 +3,7 @@ import { resolveCheckInState } from '../functions/activities/app/CheckInState'
 import { URLs } from '../constants/urls'
 import { BING_APP_USER_AGENT } from '../constants/userAgents'
 import type { BrowserContext, Cookie, Page } from 'patchright'
-import type { HttpRequestConfig } from '../util/Http'
+import type { HttpRequestConfig, HttpResponse } from '../util/Http'
 
 import type { MicrosoftRewardsBot } from '../index'
 import type { PageSnapshot, ParsedOffer } from './ReactFunc'
@@ -947,6 +947,26 @@ export default class BrowserFunc {
             acknowledged: this.bot.utils.serverActionAcknowledged(response.data),
             availablePoints: this.bot.browser.react.availablePointsFromPayload(response.data)
         }
+    }
+
+    // Plain HTTP request carrying the cached session cookies for the target URL (used by UrlReward fallbacks)
+    async requestWithSessionCookies<T = unknown>(
+        config: HttpRequestConfig & { url: string }
+    ): Promise<HttpResponse<T>> {
+        const fingerprintHeaders = { ...this.bot.fingerprint.headers }
+        delete fingerprintHeaders['Cookie']
+        delete fingerprintHeaders['cookie']
+
+        const response = await this.bot.http.request<T>({
+            ...config,
+            headers: {
+                ...fingerprintHeaders,
+                ...(config.headers ?? {}),
+                Cookie: this.buildCookieHeader(this.getCachedCookies(undefined, config.url))
+            }
+        })
+        await this.applyResponseCookies(config.url, response.headers['set-cookie'])
+        return response
     }
 
     async refreshEarnSnapshot(): Promise<PageSnapshot | null> {
