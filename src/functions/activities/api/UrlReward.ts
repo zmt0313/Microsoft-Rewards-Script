@@ -1,7 +1,6 @@
 import { URLs } from '../../../constants/urls'
 import type { BasePromotion } from '../../../interface/DashboardData'
 import { BaseActivity } from '../BaseActivity'
-import { UrlRewardFallback } from './UrlRewardFallback'
 
 export class UrlReward extends BaseActivity {
     public async doUrlReward(promotion: BasePromotion) {
@@ -58,32 +57,25 @@ export class UrlReward extends BaseActivity {
             `开始处理 UrlReward | offerId=${offerId} | geo=${this.bot.userData.geoLocale} | currentBalance=${oldBalance}`
         )
 
-        this.bot.logger.debug(
-            this.bot.isMobile,
-            'URL-REWARD',
-            `[诊断] 上报参数 | offerId=${offerId} | Next-Action=${actionId} | hash=${live.hash?.slice(0, 12) ?? 'null'}… | activityType=${activityType} | isPromotional=${live.isPromotional} | timezoneOffset=${this.bot.userData.timezoneOffset}`
-        )
-
         try {
             this.markExecuted()
-            const { status, acknowledged, availablePoints, bodyExcerpt } =
-                await this.bot.browser.func.reportServerAction(
-                    actionId,
-                    [
-                        live.hash,
-                        activityType,
-                        {
-                            offerid: offerId,
-                            isPromotional: live.isPromotional ? true : '$undefined',
-                            timezoneOffset: this.bot.userData.timezoneOffset
-                        }
-                    ],
+            const { status, acknowledged, availablePoints } = await this.bot.browser.func.reportServerAction(
+                actionId,
+                [
+                    live.hash,
+                    activityType,
                     {
-                        url: URLs.rewards.dashboard,
-                        referer: URLs.rewards.dashboard,
-                        routerStateTree: this.bot.browser.react.pageRouterStateTree('dashboard')
+                        offerid: offerId,
+                        isPromotional: live.isPromotional ? true : '$undefined',
+                        timezoneOffset: this.bot.userData.timezoneOffset
                     }
-                )
+                ],
+                {
+                    url: URLs.rewards.dashboard,
+                    referer: URLs.rewards.dashboard,
+                    routerStateTree: this.bot.browser.react.pageRouterStateTree('dashboard')
+                }
+            )
 
             if (!acknowledged) {
                 this.bot.logger.warn(
@@ -91,37 +83,17 @@ export class UrlReward extends BaseActivity {
                     'URL-REWARD',
                     `UrlReward 请求未被确认 | offerId=${offerId} | status=${status}`
                 )
-                this.bot.logger.debug(
-                    this.bot.isMobile,
-                    'URL-REWARD',
-                    `[诊断] 未确认响应原文（前 200 字符） | offerId=${offerId} | body=${bodyExcerpt}`
-                )
+                if (await this.retryAfterRequestFailure(promotion, allowSessionRepair)) return
             }
 
-            let newBalance = availablePoints ?? (await this.bot.browser.func.getCurrentPoints())
-            let gainedPoints = newBalance - oldBalance
-            let via = 'reportActivity'
+            const newBalance = availablePoints ?? (await this.bot.browser.func.getCurrentPoints())
+            const gainedPoints = newBalance - oldBalance
 
             this.bot.logger.debug(
                 this.bot.isMobile,
                 'URL-REWARD',
                 `响应 | offerId=${offerId} | status=${status} | acknowledged=${acknowledged} | pointsGained=${gainedPoints} | currentBalance=${newBalance}`
             )
-
-            // 2026-11-16 起国区 reportActivity 回 200 但不给分（Issue #79），只在首轮尝试备用通道，避免重复上报
-            const zeroPointByDesign = acknowledged && expectedPoints === 0
-            if (gainedPoints <= 0 && !zeroPointByDesign && allowSessionRepair) {
-                const fallback = await this.tryFallbacks(offerId, oldBalance)
-                if (fallback) {
-                    newBalance = fallback.balance
-                    gainedPoints = newBalance - oldBalance
-                    via = fallback.channel
-                }
-            }
-
-            if (gainedPoints <= 0 && !acknowledged) {
-                if (await this.retryAfterRequestFailure(promotion, allowSessionRepair)) return
-            }
 
             if (gainedPoints > 0) {
                 this.bot.userData.currentPoints = newBalance
@@ -131,7 +103,7 @@ export class UrlReward extends BaseActivity {
                 this.bot.logger.info(
                     this.bot.isMobile,
                     'URL-REWARD',
-                    `UrlReward 完成 | offerId=${offerId} | via=${via} | pointsGained=${gainedPoints} | currentBalance=${newBalance}${shortfall ? ' | WARNING: credited less than advertised' : ''}`,
+                    `UrlReward 完成 | offerId=${offerId} | pointsGained=${gainedPoints} | currentBalance=${newBalance}${shortfall ? ' | WARNING: credited less than advertised' : ''}`,
                     'green'
                 )
             } else if (acknowledged && expectedPoints === 0) {
@@ -156,58 +128,6 @@ export class UrlReward extends BaseActivity {
             )
             await this.retryAfterRequestFailure(promotion, allowSessionRepair)
         }
-    }
-
-    // 依次尝试 Bing flyout 和 dapi，用余额变化判定是否到账；到账则返回新余额
-    private async tryFallbacks(
-        offerId: string,
-        oldBalance: number
-    ): Promise<{ channel: 'flyout' | 'dapi'; balance: number } | null> {
-        const fallback = new UrlRewardFallback(this.bot)
-        const channels = [
-            { name: 'flyout' as const, run: () => fallback.reportViaFlyout(offerId) },
-            { name: 'dapi' as const, run: () => fallback.reportViaDapi(offerId) }
-        ]
-
-        for (const channel of channels) {
-            try {
-                this.bot.logger.info(
-                    this.bot.isMobile,
-                    'URL-REWARD',
-                    `reportActivity 未到账，改走备用通道 | offerId=${offerId} | channel=${channel.name}`
-                )
-                const result = await channel.run()
-                this.bot.logger.debug(
-                    this.bot.isMobile,
-                    'URL-REWARD',
-                    `备用通道响应 | offerId=${offerId} | channel=${channel.name} | accepted=${result.accepted} | ${result.detail}`
-                )
-                if (!result.accepted) continue
-
-                let balance = result.balance
-                if (balance === null || balance <= oldBalance) {
-                    // 服务端入账可能有延迟，稍等再查余额
-                    await this.bot.utils.wait(2000)
-                    balance = await this.bot.browser.func.getCurrentPoints()
-                }
-
-                if (balance > oldBalance) return { channel: channel.name, balance }
-
-                this.bot.logger.warn(
-                    this.bot.isMobile,
-                    'URL-REWARD',
-                    `备用通道已接受但余额未变 | offerId=${offerId} | channel=${channel.name} | currentBalance=${balance}`
-                )
-            } catch (error) {
-                this.bot.logger.warn(
-                    this.bot.isMobile,
-                    'URL-REWARD',
-                    `备用通道出错 | offerId=${offerId} | channel=${channel.name} | message=${error instanceof Error ? error.message : String(error)}`
-                )
-            }
-        }
-
-        return null
     }
 
     private async retryAfterRequestFailure(promotion: BasePromotion, allowSessionRepair: boolean): Promise<boolean> {

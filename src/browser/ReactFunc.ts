@@ -525,6 +525,7 @@ export default class ReactFunc {
     }
 
     // 与浏览器实际发送的一致（2026-11-17 抓包核对，也与上游 v5 一致）：__PAGE__、各层 0、根 16
+    // 国区 2026-11-16 构建起，reportActivity 带 routerStateTree() 的 PAGE/4096 树会回 200 但不给分（#79）
     public pageRouterStateTree(segment: string): string {
         const tree = [
             '',
@@ -627,13 +628,6 @@ export default class ReactFunc {
 
                     if (candidates.length) {
                         byName[candidates[candidates.length - 1]!] = id
-                    }
-                    if (candidates.length > 1 || candidates.includes('reportActivity')) {
-                        this.bot.logger.debug(
-                            this.bot.isMobile,
-                            'REACT-PARSE',
-                            `[诊断] action 候选名 | id=${id} | 候选=[${candidates.join(', ')}] | 采用=${candidates.at(-1)}`
-                        )
                     }
                 }
             }

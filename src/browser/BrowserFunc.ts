@@ -3,7 +3,7 @@ import { resolveCheckInState } from '../functions/activities/app/CheckInState'
 import { URLs } from '../constants/urls'
 import { BING_APP_USER_AGENT } from '../constants/userAgents'
 import type { BrowserContext, Cookie, Page } from 'patchright'
-import type { HttpRequestConfig, HttpResponse } from '../util/Http'
+import type { HttpRequestConfig } from '../util/Http'
 
 import type { MicrosoftRewardsBot } from '../index'
 import type { PageSnapshot, ParsedOffer } from './ReactFunc'
@@ -460,11 +460,6 @@ export default class BrowserFunc {
                         'BOOTSTRAP',
                         `在 ${filename} 中发现 ${names.length} 个 action id: [${names.join(', ')}]`
                     )
-                    this.bot.logger.debug(
-                        this.bot.isMobile,
-                        'BOOTSTRAP',
-                        `[诊断] ${filename} 名字→编号: ${names.map(n => `${n}=${ids.byName[n]}`).join(' | ')}`
-                    )
                 } else {
                     this.bot.logger.debug(this.bot.isMobile, 'BOOTSTRAP', `在 ${filename} 中未发现 server-action id`)
                 }
@@ -484,11 +479,6 @@ export default class BrowserFunc {
                 this.bot.isMobile,
                 'BOOTSTRAP',
                 `已发现 ${Object.keys(result).length} 个 action id: [${Object.keys(result).join(', ')}]`
-            )
-            this.bot.logger.debug(
-                this.bot.isMobile,
-                'BOOTSTRAP',
-                `[诊断] 最终 reportActivity=${result.reportActivity ?? '未找到'}`
             )
         } catch (error) {
             this.bot.logger.error(
@@ -921,7 +911,7 @@ export default class BrowserFunc {
         actionId: string,
         body: unknown[],
         opts?: { url?: string; referer?: string; routerStateTree?: string }
-    ): Promise<{ status: number; acknowledged: boolean; availablePoints: number | null; bodyExcerpt: string }> {
+    ): Promise<{ status: number; acknowledged: boolean; availablePoints: number | null }> {
         const url = opts?.url ?? URLs.rewards.earn
         const referer = opts?.referer ?? url
         const routerStateTree = opts?.routerStateTree ?? this.bot.nextRouterStateTree
@@ -941,12 +931,6 @@ export default class BrowserFunc {
             ...(this.rewardsDeploymentId ? { 'X-Deployment-Id': this.rewardsDeploymentId } : {})
         }
 
-        this.bot.logger.debug(
-            this.bot.isMobile,
-            'SERVER-ACTION',
-            `[诊断] 请求头 | url=${url} | Next-Action=${actionId} | X-Deployment-Id=${this.rewardsDeploymentId || '无'} | Next-Router-State-Tree=${routerStateTree}`
-        )
-
         const response = await this.bot.http.request({
             url,
             method: 'POST',
@@ -961,31 +945,8 @@ export default class BrowserFunc {
         return {
             status: response.status,
             acknowledged: this.bot.utils.serverActionAcknowledged(response.data),
-            availablePoints: this.bot.browser.react.availablePointsFromPayload(response.data),
-            bodyExcerpt: (typeof response.data === 'string' ? response.data : JSON.stringify(response.data ?? ''))
-                .slice(0, 200)
-                .replace(/\r?\n/g, '\\n')
+            availablePoints: this.bot.browser.react.availablePointsFromPayload(response.data)
         }
-    }
-
-    // Plain HTTP request carrying the cached session cookies for the target URL (used by UrlReward fallbacks)
-    async requestWithSessionCookies<T = unknown>(
-        config: HttpRequestConfig & { url: string }
-    ): Promise<HttpResponse<T>> {
-        const fingerprintHeaders = { ...this.bot.fingerprint.headers }
-        delete fingerprintHeaders['Cookie']
-        delete fingerprintHeaders['cookie']
-
-        const response = await this.bot.http.request<T>({
-            ...config,
-            headers: {
-                ...fingerprintHeaders,
-                ...(config.headers ?? {}),
-                Cookie: this.buildCookieHeader(this.getCachedCookies(undefined, config.url))
-            }
-        })
-        await this.applyResponseCookies(config.url, response.headers['set-cookie'])
-        return response
     }
 
     async refreshEarnSnapshot(): Promise<PageSnapshot | null> {
